@@ -22,8 +22,8 @@ def upload_data(data, filename):
 
 if __name__ == '__main__':
     # Year ranges [2016 - 2025]
-    start_yr = 2025
-    end_yr = 2025
+    start_yr = 2024
+    end_yr = 2024
     url = "https://baseballsavant.mlb.com/leaderboard/basestealing-run-value"
     data = scrape_data(start_yr, end_yr, url)
     upload_data(data, f"sb_data_{start_yr}-{end_yr}.csv")

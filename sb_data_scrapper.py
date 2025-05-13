@@ -48,7 +48,12 @@ def upload_data(sbdata: SBData, data: list[str]):
 
 
 def upload_remaining_data(sbdata: SBData, data: list[str]):
-    sbdata.batter_name = safe_get(data, 0)
+    batter_name = safe_get(data, 0)
+    if batter_name:
+        name = batter_name.split(',')
+        first = name[1].strip()
+        last = name[0].strip()
+        sbdata.batter_name = f"{first} | {last}"
     count = safe_get(data, 2)
     if '-' in count:
         parts = count.split('-')
@@ -100,7 +105,14 @@ def process_player(driver, wait, player, start_year, end_year, url, all_data, is
 
         for j, sb_row in enumerate(sb_rows):
             spans = sb_row.find_elements(By.TAG_NAME, "span")
-            values = [s.text.strip() if s.text.strip() != '--' else "" for s in spans if s.text.strip()]
+            values = []
+            for s in spans:
+                if s.find_elements(By.TAG_NAME, "a"):
+                    href = s.find_element(By.TAG_NAME, "a").get_attribute("href")
+                    id = href.split("/")[-1]
+                    values.append(id)
+                else:
+                    values.append(s.text.strip())
             sb = SBData()
             upload_data(sb, values)
 
@@ -137,7 +149,6 @@ def scrape_data(start_year: int, end_year: int, url: str) -> list[SBData]:
     driver = init_driver()
     wait = WebDriverWait(driver, 15)
     all_data = []
-    failed_players = []
 
     try:
         driver.get(url)
@@ -146,27 +157,11 @@ def scrape_data(start_year: int, end_year: int, url: str) -> list[SBData]:
         players = [r.find_element(By.TAG_NAME, "a").text for r in rows]
 
         for i, player in enumerate(players):
+            if len(all_data) >= 3:
+                break
             print(f"\nProcessing player {i + 1}/{len(players)}: {player}")
 
-            success = process_player(driver, wait, player, start_year, end_year, url, all_data)
-            if not success:
-                failed_players.append(player)
-
-        attempts = 3
-        while failed_players:
-            if attempts <= 0:
-                print("\n⚠️ Max attempts reached for failed players.")
-                break
-
-            print(f"\n🔁 Retrying {len(failed_players)} failed player(s)...\n")
-
-            for player in failed_players:
-                failed_players.remove(player)
-                print(f"Retrying player: {player}")
-                success = process_player(driver, wait, player, start_year, end_year, url, all_data, is_retry=True)
-                if not success:
-                    failed_players.append(player)
-            attempts -= 1
+            process_player(driver, wait, player, start_year, end_year, url, all_data)
 
     finally:
         driver.quit()
@@ -175,5 +170,8 @@ def scrape_data(start_year: int, end_year: int, url: str) -> list[SBData]:
 
 
 if __name__ == '__main__':
+    # Year ranges [2016 - 2025]
+    start_yr = 2023
+    end_yr = 2023
     url = "https://baseballsavant.mlb.com/leaderboard/basestealing-run-value"
-    data = scrape_data(2024, 2016, url)
+    data = scrape_data(start_yr, end_yr, url)
