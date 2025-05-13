@@ -1,10 +1,12 @@
 import time
+import random
+import pickle
 from dataclasses import dataclass
-from selenium import webdriver
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 
 @dataclass
@@ -29,10 +31,8 @@ class SBData:
     match_up: str = ""
     video_link: str = ""
 
-
 def safe_get(data: list, index: int) -> str:
     return data[index] if index < len(data) else ""
-
 
 def upload_data(sbdata: SBData, data: list[str]):
     sbdata.date = safe_get(data, 0)
@@ -47,14 +47,14 @@ def upload_data(sbdata: SBData, data: list[str]):
     sbdata.at_pitchers_first_move = safe_get(data, 9)
     sbdata.at_pitch_release = safe_get(data, 10)
 
-
 def upload_remaining_data(sbdata: SBData, data: list[str]):
     batter_name = safe_get(data, 0)
     if batter_name:
         name = batter_name.split(',')
-        first = name[1].strip()
-        last = name[0].strip()
-        sbdata.batter_name = f"{first} | {last}"
+        if len(name) > 1:
+            first = name[1].strip()
+            last = name[0].strip()
+            sbdata.batter_name = f"{first} | {last}"
     count = safe_get(data, 2)
     if '-' in count:
         parts = count.split('-')
@@ -64,15 +64,21 @@ def upload_remaining_data(sbdata: SBData, data: list[str]):
     sbdata.velo = safe_get(data, 4)
     sbdata.match_up = safe_get(data, 7)
 
+def init_driver():
+    options = uc.ChromeOptions()
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('--disable-infobars')
+    options.add_argument('--start-maximized')
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    return uc.Chrome(options=options)
 
-def init_driver() -> webdriver.Chrome:
-    options = webdriver.FirefoxOptions()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    return webdriver.Firefox(options=options)
+def countdown(seconds):
+    for _ in trange(seconds, desc=f"🛑 Sleeping between batches for {seconds} seconds", ncols=100):
+        time.sleep(1)
 
-
-def scrape_data(start_year: int, end_year: int, url: str) -> list[SBData]:
+def scrape_data(start_year: int, end_year: int, url: str):
     driver = init_driver()
     wait = WebDriverWait(driver, 60)
     all_data = []
@@ -86,41 +92,31 @@ def scrape_data(start_year: int, end_year: int, url: str) -> list[SBData]:
 
         wait.until(EC.presence_of_element_located((By.ID, "basestealing_running_game_table")))
         player_rows = driver.find_elements(By.CLASS_NAME, "default-table-row")
-        players = [row.find_element(By.TAG_NAME, 'a').text for row in player_rows]
 
-        print(f"📂 Expanding {len(player_rows)} players...")
-        failed_rows = []
+        BATCH_SIZE = 25
+        total_batches = len(player_rows) // BATCH_SIZE + (1 if len(player_rows) % BATCH_SIZE != 0 else 0)
 
-        i = 0
-        for row in tqdm(player_rows, desc="Expanding rows", ncols=80):
-            try:
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
-                time.sleep(4)
-                driver.execute_script("arguments[0].click();", row)
-                time.sleep(2)
-            except Exception:
-                failed_rows.append(i)
+        for batch_index, batch_start in enumerate(range(0, len(player_rows), BATCH_SIZE)):
+            batch = player_rows[batch_start:batch_start + BATCH_SIZE]
 
-            i += 1
+            for i, row in enumerate(tqdm(batch, desc=f"🚀 Expanding batch {batch_index + 1} of {total_batches}", ncols=80)):
+                try:
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
+                    time.sleep(random.uniform(4, 7))
+                    driver.execute_script("arguments[0].click();", row)
+                    time.sleep(random.uniform(3, 5))
+                except Exception:
+                    pass
 
-        print()
-        if failed_rows:
-            print(f"⚠️ Could not expand the following player row(s):")
-            for i in failed_rows:
-                print(f"  - {players[i]}")
-            print()
-
-        time.sleep(30)
+            wait_time = random.randint(180, 300)
+            countdown(wait_time)
 
         wait.until(EC.presence_of_all_elements_located((By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")))
-
         sub_data_rows = driver.find_elements(By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")
-        print(f"🔍 Extracting data from {len(sub_data_rows)} sub-data rows...")
-        sb_rows = []
-        failed_sub_rows = []
 
-        i = 0
-        for sub in tqdm(sub_data_rows, desc="Parsing sub-rows", ncols=80):
+        sb_rows = []
+
+        for i, sub in enumerate(tqdm(sub_data_rows, desc="Parsing sub-rows", ncols=80)):
             try:
                 sub_data_div = sub.find_element(By.CLASS_NAME, "all-tab-pane")
                 rows = sub_data_div.find_elements(By.CLASS_NAME, "default-table-row")
@@ -128,60 +124,44 @@ def scrape_data(start_year: int, end_year: int, url: str) -> list[SBData]:
                 for row in rows:
                     spans = row.find_elements(By.TAG_NAME, "span")
                     values = [s.text.strip() if not s.find_elements(By.TAG_NAME, "a") else s.find_element(By.TAG_NAME, "a").get_attribute("href").split("/")[-1] for s in spans]
-
                     sb = SBData()
                     upload_data(sb, values)
-
                     try:
                         sb.video_link = row.find_element(By.CLASS_NAME, "video-col").find_element(By.TAG_NAME, "a").get_attribute("href")
                     except Exception:
                         sb.video_link = ""
-
                     sb_rows.append(sb)
             except Exception:
-                failed_sub_rows.append(i)
-
-            i += 1
-
-        print()
-        if failed_sub_rows:
-            print(f"⚠️ Could not extract the following sub-data row(s) ({len(failed_sub_rows)} / {len(sub_data_rows)}):")
-            for i in failed_sub_rows:
-                print(f"  - {players[i]}")
-            print()
-
-        print(f"🎥 Opening {len(sb_rows)} video pages and finalizing data...")
-
-        failed_video_rows = []
+                pass
 
         for sb in tqdm(sb_rows, desc="Extracting remaining data", ncols=80):
             if not sb.video_link:
                 continue
-
             try:
                 driver.execute_script("window.open(arguments[0]);", sb.video_link)
                 driver.switch_to.window(driver.window_handles[1])
+                time.sleep(random.uniform(6, 12))
                 wait.until(EC.presence_of_element_located((By.ID, "sporty_video")))
-
                 sb.description = driver.find_element(By.TAG_NAME, "h3").text.strip()
                 bullets = driver.find_elements(By.CLASS_NAME, "mod")[-1].find_elements(By.TAG_NAME, "li")
-                bullet_data = [b.text.split(':')[-1].strip() for b in bullets]
+                bullet_data = [b.text.split(":")[-1].strip() for b in bullets]
                 upload_remaining_data(sb, bullet_data)
-
-            except Exception as e:
-                failed_video_rows.append(sb)
-
+            except Exception:
+                pass
             finally:
                 driver.close()
                 driver.switch_to.window(driver.window_handles[0])
 
             all_data.append(sb)
+            time.sleep(random.uniform(10, 20))
+
+        with open("checkpoint.pkl", "wb") as f:
+            pickle.dump(all_data, f)
 
     finally:
         driver.quit()
 
     return all_data
-
 
 if __name__ == '__main__':
     start_yr = 2025
