@@ -11,7 +11,7 @@ def lookup_player(player_name: str) -> str:
     """
     first, last = player_name.split('|')
     try:
-        player_data = playerid_lookup(last=last, first=first)
+        player_data = playerid_lookup(last=last.strip(), first=first.strip())
         if not player_data.empty:
             return player_data.iloc[0]['key_mlbam']
         else:
@@ -77,3 +77,8 @@ def calcu_required_speed(
 
     return required_speed
 
+if __name__ == '__main__':
+    first = 'Mookie'
+    last = 'Betts'
+    player_id = lookup_player(f"{first}|{last}")
+    print(player_id)
