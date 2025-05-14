@@ -31,8 +31,10 @@ class SBData:
     match_up: str = ""
     video_link: str = ""
 
+
 def safe_get(data: list, index: int) -> str:
     return data[index] if index < len(data) else ""
+
 
 def upload_data(sbdata: SBData, data: list[str]):
     sbdata.date = safe_get(data, 0)
@@ -46,6 +48,7 @@ def upload_data(sbdata: SBData, data: list[str]):
     sbdata.lead_distance_gained = safe_get(data, 8)
     sbdata.at_pitchers_first_move = safe_get(data, 9)
     sbdata.at_pitch_release = safe_get(data, 10)
+
 
 def upload_remaining_data(sbdata: SBData, data: list[str]):
     batter_name = safe_get(data, 0)
@@ -64,19 +67,23 @@ def upload_remaining_data(sbdata: SBData, data: list[str]):
     sbdata.velo = safe_get(data, 4)
     sbdata.match_up = safe_get(data, 7)
 
+
 def init_driver():
     options = uc.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_argument('--disable-infobars')
+    options.add_argument("--disable-popup-blocking")
     options.add_argument('--start-maximized')
     options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     return uc.Chrome(options=options)
 
+
 def countdown(seconds):
     for _ in trange(seconds, desc=f"🛑 Sleeping between batches for {seconds} seconds", ncols=100):
         time.sleep(1)
+
 
 def scrape_data(start_year: int, end_year: int, url: str):
     driver = init_driver()
@@ -85,6 +92,9 @@ def scrape_data(start_year: int, end_year: int, url: str):
 
     try:
         driver.get(url)
+
+        main_window = driver.current_window_handle
+
         wait.until(EC.presence_of_element_located((By.ID, "ddlSeasonStart")))
         Select(driver.find_element(By.ID, "ddlSeasonStart")).select_by_visible_text(str(start_year))
         Select(driver.find_element(By.ID, "ddlSeasonEnd")).select_by_visible_text(str(end_year))
@@ -102,14 +112,15 @@ def scrape_data(start_year: int, end_year: int, url: str):
             for i, row in enumerate(tqdm(batch, desc=f"🚀 Expanding batch {batch_index + 1} of {total_batches}", ncols=80)):
                 try:
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
-                    time.sleep(random.uniform(4, 7))
+                    time.sleep(random.uniform(3, 6))
                     driver.execute_script("arguments[0].click();", row)
-                    time.sleep(random.uniform(3, 5))
+                    time.sleep(random.uniform(2, 5))
                 except Exception:
                     pass
 
-            wait_time = random.randint(180, 300)
+            wait_time = random.randint(0, 120)
             countdown(wait_time)
+            print()
 
         wait.until(EC.presence_of_all_elements_located((By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")))
         sub_data_rows = driver.find_elements(By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")
@@ -118,6 +129,8 @@ def scrape_data(start_year: int, end_year: int, url: str):
 
         for i, sub in enumerate(tqdm(sub_data_rows, desc="Parsing sub-rows", ncols=80)):
             try:
+                driver.execute_script("window.scrollBy(0, 100);")
+                time.sleep(0.5)
                 sub_data_div = sub.find_element(By.CLASS_NAME, "all-tab-pane")
                 rows = sub_data_div.find_elements(By.CLASS_NAME, "default-table-row")
 
@@ -132,7 +145,12 @@ def scrape_data(start_year: int, end_year: int, url: str):
                         sb.video_link = ""
                     sb_rows.append(sb)
             except Exception:
-                pass
+                print(f"Error processing sub-row {i + 1}: {sub.text}")
+                continue
+
+        # Upload the current data to a checkpoint file
+        with open("checkpoint_1.pkl", "wb") as f:
+            pickle.dump(sb_rows, f)
 
         for sb in tqdm(sb_rows, desc="Extracting remaining data", ncols=80):
             if not sb.video_link:
@@ -140,28 +158,29 @@ def scrape_data(start_year: int, end_year: int, url: str):
             try:
                 driver.execute_script("window.open(arguments[0]);", sb.video_link)
                 driver.switch_to.window(driver.window_handles[1])
-                time.sleep(random.uniform(6, 12))
                 wait.until(EC.presence_of_element_located((By.ID, "sporty_video")))
                 sb.description = driver.find_element(By.TAG_NAME, "h3").text.strip()
                 bullets = driver.find_elements(By.CLASS_NAME, "mod")[-1].find_elements(By.TAG_NAME, "li")
                 bullet_data = [b.text.split(":")[-1].strip() for b in bullets]
                 upload_remaining_data(sb, bullet_data)
             except Exception:
-                pass
+                print(f"Error processing video link: {sb.video_link}")
+                continue
             finally:
                 driver.close()
-                driver.switch_to.window(driver.window_handles[0])
+                driver.switch_to.window(main_window)
 
             all_data.append(sb)
-            time.sleep(random.uniform(10, 20))
+            time.sleep(random.uniform(0, 2))
 
-        with open("checkpoint.pkl", "wb") as f:
+        with open("checkpoint_2.pkl", "wb") as f:
             pickle.dump(all_data, f)
 
     finally:
         driver.quit()
 
     return all_data
+
 
 if __name__ == '__main__':
     start_yr = 2025

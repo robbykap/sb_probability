@@ -77,6 +77,7 @@ def calcu_required_speed(
 
     return required_speed
 
+
 if __name__ == '__main__':
     first = 'Mookie'
     last = 'Betts'
