@@ -1,23 +1,6 @@
-from pybaseball import playerid_lookup, statcast_sprint_speed, statcast_catcher_poptime, statcast_pitcher_arsenal_stats
-
-def lookup_player(player_name: str) -> str:
-    """
-    Lookup player ID using playerid_lookup from pybaseball.
-    Args:
-        player_name: str - The name of the player to lookup.
-
-    Returns:
-        str - The player ID.
-    """
-    first, last = player_name.split('|')
-    try:
-        player_data = playerid_lookup(last=last.strip(), first=first.strip())
-        if not player_data.empty:
-            return player_data.iloc[0]['key_mlbam']
-        else:
-            raise ValueError(f"Player {player_name} not found.")
-    except Exception as e:
-        raise ValueError(f"Error looking up player {player_name}: {e}")
+from pybaseball import playerid_lookup, statcast_sprint_speed, statcast_catcher_poptime, statcast_pitcher_arsenal_stats, playerid_reverse_lookup
+import pickle
+import pandas as pd
 
 
 # Distances (in)
@@ -78,8 +61,148 @@ def calcu_required_speed(
     return required_speed
 
 
+def lookup_player(player_name: str) -> str:
+    """
+    Lookup player ID using playerid_lookup from pybaseball.
+    Args:
+        player_name: str - The name of the player to lookup.
+
+    Returns:
+        str - The player ID.
+    """
+    first, last = player_name.split('|')
+    try:
+        player_data = playerid_lookup(last=last.strip(), first=first.strip())
+        if not player_data.empty:
+            return player_data.iloc[0]['key_mlbam']
+        else:
+            raise ValueError(f"Player {player_name} not found.")
+    except Exception as e:
+        raise ValueError(f"Error looking up player {player_name}: {e}")
+
+
+def update_batters(file_path: str, player_info: dict = None):
+    """
+    Update the batters column with player IDs.
+    Args:
+        file_path: str - The path to the batters file.
+    """
+
+    # Load the csv file into a DataFrame
+    df = pd.read_csv(file_path)
+
+    # Get all unique batter names
+    unique_batters = df['batter_name'].unique()
+
+    # Create a dictionary to store player IDs
+    player_ids = {}
+    failed = []
+    for batter in unique_batters:
+        try:
+            player_id = lookup_player(batter)
+            player_ids[batter] = player_id
+        except ValueError as _:
+            try:
+                first, last = batter.split('|')
+                batter_name = f"{first.strip()} {last.strip()}"
+            except ValueError as _:
+                batter_name = batter
+            player_ids[batter] = player_info.get(f"{batter_name}", f"{batter}")
+    print('Failed to lookup the following players:')
+    for player in failed:
+        try:
+            int(player)
+        except ValueError as _:
+            print(player)
+
+
+    # Replace batter names with player IDs in the DataFrame
+    df['batter_name'] = df['batter_name'].replace(player_ids)
+
+    # Save the updated DataFrame
+    df.to_csv(file_path, index=False)
+
+
+def update_description(file_path: str):
+    """
+    Update the description column to simply include if it was a ball or strike
+    Args:
+        file_path: str - The path to the description file.
+    """
+
+    # Go through each row and update the description
+    df = pd.read_csv(file_path)
+    for index, row in df.iterrows():
+        try:
+            if "ball" in row['description'].lower():
+                df.at[index, 'description'] = "ball"
+            elif "strike" in row['description'].lower():
+                df.at[index, 'description'] = "strike"
+            else:
+                df.at[index, 'description'] = "unknown"
+        except AttributeError as e:
+            print(f"Error processing row {index}: {e}")
+            df.at[index, 'description'] = "unknown"
+
+    # rename the column to "call"
+    df.rename(columns={'description': 'call'}, inplace=True)
+
+    # Save the updated DataFrame
+    df.to_csv(file_path, index=False)
+
+
+def remove_duplicates(file_path: str):
+    """
+    Remove duplicate lines from a csv file while preserving the header.
+    Args:
+        file_path: str - The path to the file to remove duplicates from.
+    """
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Separate the header and the rest of the lines
+    header = lines[0]
+    unique_lines = list(set(lines[1:]))  # Exclude the header from deduplication
+
+    # Write back the header and unique lines
+    with open(file_path, 'w') as file:
+        file.write(header)
+        file.writelines(unique_lines)
+
+
+def remove_video_link_col(file_path: str):
+    """
+    Remove the video link column from a csv file.
+    Args:
+        file_path: str - The path to the file to remove duplicates from.
+    """
+    df = pd.read_csv(file_path)
+    df.drop(columns=['video_link'], inplace=True)
+    df.to_csv(file_path, index=False)
+
+
+def pkl_content(file_path: str) -> int:
+    """
+    See if the pkl file is empty or not.
+    Then return the content if not empty.
+
+    Args:
+        file_path:
+
+    Returns: str | int
+        The content of the pkl file if not empty.
+    """
+
+    try:
+        with open(file_path, 'rb') as file:
+            content = pickle.load(file)
+            if content:
+                return content
+            else:
+                raise ValueError("The pkl file is empty.")
+    except Exception as e:
+        raise ValueError(f"Error reading the pkl file: {e}")
+
+
 if __name__ == '__main__':
-    first = 'Mookie'
-    last = 'Betts'
-    player_id = lookup_player(f"{first}|{last}")
-    print(player_id)
+    file_path = "sb_data_2023-2025.csv"

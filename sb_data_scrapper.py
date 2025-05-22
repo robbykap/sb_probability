@@ -1,6 +1,7 @@
 import time
 import random
 import pickle
+from pathlib import Path
 from dataclasses import dataclass
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -68,6 +69,31 @@ def upload_remaining_data(sbdata: SBData, data: list[str]):
     sbdata.match_up = safe_get(data, 7)
 
 
+def upload(data, filename):
+    """
+    Uploads the scraped data to a CSV file.
+
+    Args:
+        data (list): The scraped data.
+        filename (str): The name of the file to save the data to.
+    """
+    file_exists = Path(filename).exists()
+    is_empty = not file_exists or Path(filename).stat().st_size == 0
+
+    # Open in append mode if the file exists and isn't empty
+    mode = 'a' if file_exists and not is_empty else 'w'
+
+    with open(filename, mode) as file:
+        header = [field for field in SBData.__annotations__.keys()]
+
+        if mode == 'w':
+            file.write(','.join(header) + '\n')
+
+        for entry in data:
+            line = ','.join(str(getattr(entry, field)) for field in header)
+            file.write(line + '\n')
+
+
 def init_driver():
     options = uc.ChromeOptions()
     options.add_argument('--no-sandbox')
@@ -85,105 +111,130 @@ def countdown(seconds):
         time.sleep(1)
 
 
-def scrape_data(start_year: int, end_year: int, url: str):
+def scrape_data(start_year: int, end_year: int, url: str, checkpoint: str = None, file_path: str = None):
     driver = init_driver()
     wait = WebDriverWait(driver, 60)
-    all_data = []
 
     try:
         driver.get(url)
 
         main_window = driver.current_window_handle
 
-        wait.until(EC.presence_of_element_located((By.ID, "ddlSeasonStart")))
-        Select(driver.find_element(By.ID, "ddlSeasonStart")).select_by_visible_text(str(start_year))
-        Select(driver.find_element(By.ID, "ddlSeasonEnd")).select_by_visible_text(str(end_year))
-        driver.find_element(By.ID, "btn-update").click()
+        # Load the checkpoint data if provided
+        if checkpoint:
+            with open(checkpoint, "rb") as f:
+                sb_rows = pickle.load(f)
 
-        wait.until(EC.presence_of_element_located((By.ID, "basestealing_running_game_table")))
-        player_rows = driver.find_elements(By.CLASS_NAME, "default-table-row")
+        else:
+            wait.until(EC.presence_of_element_located((By.ID, "ddlSeasonStart")))
+            Select(driver.find_element(By.ID, "ddlSeasonStart")).select_by_visible_text(str(start_year))
+            Select(driver.find_element(By.ID, "ddlSeasonEnd")).select_by_visible_text(str(end_year))
+            driver.find_element(By.ID, "btn-update").click()
 
-        BATCH_SIZE = 25
-        total_batches = len(player_rows) // BATCH_SIZE + (1 if len(player_rows) % BATCH_SIZE != 0 else 0)
+            wait.until(EC.presence_of_element_located((By.ID, "basestealing_running_game_table")))
+            player_rows = driver.find_elements(By.CLASS_NAME, "default-table-row")
 
-        for batch_index, batch_start in enumerate(range(0, len(player_rows), BATCH_SIZE)):
-            batch = player_rows[batch_start:batch_start + BATCH_SIZE]
+            BATCH_SIZE = 25
+            total_batches = len(player_rows) // BATCH_SIZE + (1 if len(player_rows) % BATCH_SIZE != 0 else 0)
 
-            for i, row in enumerate(tqdm(batch, desc=f"🚀 Expanding batch {batch_index + 1} of {total_batches}", ncols=80)):
-                try:
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
-                    time.sleep(random.uniform(3, 6))
-                    driver.execute_script("arguments[0].click();", row)
-                    time.sleep(random.uniform(2, 5))
-                except Exception:
-                    pass
+            for batch_index, batch_start in enumerate(range(0, len(player_rows), BATCH_SIZE)):
+                batch = player_rows[batch_start:batch_start + BATCH_SIZE]
 
-            wait_time = random.randint(0, 120)
-            countdown(wait_time)
-            print()
-
-        wait.until(EC.presence_of_all_elements_located((By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")))
-        sub_data_rows = driver.find_elements(By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")
-
-        sb_rows = []
-
-        for i, sub in enumerate(tqdm(sub_data_rows, desc="Parsing sub-rows", ncols=80)):
-            try:
-                driver.execute_script("window.scrollBy(0, 100);")
-                time.sleep(0.5)
-                sub_data_div = sub.find_element(By.CLASS_NAME, "all-tab-pane")
-                rows = sub_data_div.find_elements(By.CLASS_NAME, "default-table-row")
-
-                for row in rows:
-                    spans = row.find_elements(By.TAG_NAME, "span")
-                    values = [s.text.strip() if not s.find_elements(By.TAG_NAME, "a") else s.find_element(By.TAG_NAME, "a").get_attribute("href").split("/")[-1] for s in spans]
-                    sb = SBData()
-                    upload_data(sb, values)
+                for i, row in enumerate(tqdm(batch, desc=f"🚀 Expanding batch {batch_index + 1} of {total_batches}", ncols=80)):
                     try:
-                        sb.video_link = row.find_element(By.CLASS_NAME, "video-col").find_element(By.TAG_NAME, "a").get_attribute("href")
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
+                        time.sleep(random.uniform(3, 6))
+                        driver.execute_script("arguments[0].click();", row)
+                        time.sleep(random.uniform(2, 5))
                     except Exception:
-                        sb.video_link = ""
-                    sb_rows.append(sb)
-            except Exception:
-                print(f"Error processing sub-row {i + 1}: {sub.text}")
-                continue
+                        pass
 
-        # Upload the current data to a checkpoint file
-        with open("checkpoint_1.pkl", "wb") as f:
-            pickle.dump(sb_rows, f)
+                wait_time = random.randint(0, 120)
+                countdown(wait_time)
+                print()
 
-        for sb in tqdm(sb_rows, desc="Extracting remaining data", ncols=80):
+            wait.until(EC.presence_of_all_elements_located((By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")))
+            sub_data_rows = driver.find_elements(By.XPATH, "//tr[@class='tr-sub-data' and @data-open='true']")
+
+            sb_rows = []
+
+            for i, sub in enumerate(tqdm(sub_data_rows, desc="Parsing sub-rows", ncols=80)):
+                try:
+                    driver.execute_script("window.scrollBy(0, 100);")
+                    time.sleep(0.5)
+                    sub_data_div = sub.find_element(By.CLASS_NAME, "all-tab-pane")
+                    rows = sub_data_div.find_elements(By.CLASS_NAME, "default-table-row")
+
+                    for row in rows:
+                        spans = row.find_elements(By.TAG_NAME, "span")
+                        values = [s.text.strip() if not s.find_elements(By.TAG_NAME, "a") else s.find_element(By.TAG_NAME, "a").get_attribute("href").split("/")[-1] for s in spans]
+                        sb = SBData()
+                        upload_data(sb, values)
+                        try:
+                            sb.video_link = row.find_element(By.CLASS_NAME, "video-col").find_element(By.TAG_NAME, "a").get_attribute("href")
+                        except Exception:
+                            sb.video_link = ""
+                        sb_rows.append(sb)
+                except Exception:
+                    print(f"Error processing sub-row {i + 1}: {sub.text}")
+                    continue
+
+            # Upload the current data to a checkpoint file
+            with open(checkpoint, "wb") as f:
+                pickle.dump(sb_rows, f)
+
+        for i, sb in enumerate(tqdm(sb_rows, desc="Extracting remaining data", ncols=80)):
             if not sb.video_link:
                 continue
             try:
                 driver.execute_script("window.open(arguments[0]);", sb.video_link)
                 driver.switch_to.window(driver.window_handles[1])
-                wait.until(EC.presence_of_element_located((By.ID, "sporty_video")))
-                sb.description = driver.find_element(By.TAG_NAME, "h3").text.strip()
-                bullets = driver.find_elements(By.CLASS_NAME, "mod")[-1].find_elements(By.TAG_NAME, "li")
-                bullet_data = [b.text.split(":")[-1].strip() for b in bullets]
-                upload_remaining_data(sb, bullet_data)
-            except Exception:
-                print(f"Error processing video link: {sb.video_link}")
+
+                try:
+                    # Wait with a timeout (e.g., 10 seconds max)
+                    wait.until(EC.presence_of_element_located((By.ID, "sporty_video")))
+
+                    # Check for "Bad Gateway"
+                    if "Bad Gateway" in driver.page_source or "502" in driver.title:
+                        print("Bad Gateway detected. Refreshing...")
+                        driver.refresh()
+                        wait.until(EC.presence_of_element_located((By.ID, "sporty_video")))
+
+                    # Continue only if sporty_video exists
+                    sb.description = driver.find_element(By.TAG_NAME, "h3").text.strip().replace(',', '|')
+                    bullets = driver.find_elements(By.CLASS_NAME, "mod")[-1].find_elements(By.TAG_NAME, "li")
+                    bullet_data = [b.text.split(":")[-1].strip() for b in bullets]
+                    upload_remaining_data(sb, bullet_data)
+
+                except Exception as e:
+                    print(f"Timeout or content issue: {e}")
+                    continue
+
+            except Exception as e:
+                print(f"Error opening video link: {sb.video_link} | {e}")
                 continue
+
             finally:
-                driver.close()
-                driver.switch_to.window(main_window)
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
 
-            all_data.append(sb)
-            time.sleep(random.uniform(0, 2))
+            # time.sleep(random.uniform(3, 5))
 
-        with open("checkpoint_2.pkl", "wb") as f:
-            pickle.dump(all_data, f)
+            # Upload the data to a CSV file
+            upload([sb], file_path)
+
+            # Updated the checkpoint file after each entry to remove the processed data
+            with open(checkpoint, "wb") as f:
+                pickle.dump(sb_rows[i + 1:], f)
 
     finally:
         driver.quit()
 
-    return all_data
-
 
 if __name__ == '__main__':
-    start_yr = 2025
+    # Year ranges [2016 - 2025]
+    start_yr = 2023
     end_yr = 2025
     url = "https://baseballsavant.mlb.com/leaderboard/basestealing-run-value"
-    data = scrape_data(start_yr, end_yr, url)
+    data = scrape_data(start_yr, end_yr, url, checkpoint="checkpoint_1.pkl", file_path=f"sb_data_{start_yr}-{end_yr}.csv")
