@@ -1,208 +1,307 @@
-from pybaseball import playerid_lookup, statcast_sprint_speed, statcast_catcher_poptime, statcast_pitcher_arsenal_stats, playerid_reverse_lookup
 import pickle
 import pandas as pd
+from datetime import datetime
+from pybaseball import playerid_lookup, playerid_reverse_lookup, statcast_catcher_poptime, statcast_pitcher, statcast_sprint_speed
 
 
-# Distances (in)
+# ---------------------------------------------------------------------------- #
+#                             Generate Player Data                             #
+# ---------------------------------------------------------------------------- #
+
+
+def generate_player_data(file_path: str):
+    ids = list(range(1, 900000))
+    players_df = playerid_reverse_lookup(ids, key_type='mlbam')
+
+    players_df = players_df.dropna(subset=['name_first', 'name_last'])
+
+    players_df['full_name'] = players_df['name_first'] + ' ' + players_df['name_last']
+
+    players_df = players_df[['key_mlbam', 'name_first', 'name_last', 'full_name']]
+
+    players_df.to_csv(file_path, index=False)
+
+
+# ---------------------------------------------------------------------------- #
+#                             Required Runner Speed                            #
+# ---------------------------------------------------------------------------- #
+
+
+# Distances (in inches)
 TARGETS = {
-    "second": {
-        "from_first": 1080,
-        "from_home": 1527.375
-    },
-    "third": {
-        "from_second": 1080,
-        "from_home": 1080
-    },
+    "second": {"from_first": 1080, "from_home": 1527.375},
+    "third": {"from_second": 1080, "from_home": 1080},
 }
-MOUND_HOME = 726
+MOUND_HOME = 726  # Distance from mound to home plate in inches
 
 
-# Calculate how fast a runner needs to be to steal a base
-def calcu_required_speed(
-        target_base:str,
-        runner_lead:float,
-        runner_speed:float,
-        pitcher_velo:float,
-        catcher_pop:float,
+def calculate_required_speed(
+    target_base: str,
+    runner_lead: float,
+    runner_speed: float,
+    pitcher_velo: float,
+    catcher_pop: float,
 ) -> float:
     """
-    Calculate how fast a runner needs to be to steal a given base.
+    Calculate the required speed for a runner to successfully steal a base.
 
     Args:
-        target_base: str - The target base to steal, either "second" or "third".
-        runner_lead: float - The distance the runner is leading off the base (in inches).
-        runner_speed: float - The speed of the runner (in inches per second).
-        pitcher_velo: float - The speed of the pitcher's throw to home plate (in inches per second).
-        catcher_pop: float - The time it takes for the catcher to pop up and throw (in seconds).
+        target_base: "second" or "third".
+        runner_lead: Lead distance in inches.
+        runner_speed: Runner speed in inches/sec.
+        pitcher_velo: Pitch velocity in inches/sec.
+        catcher_pop: Catcher pop time in seconds.
 
-    Returns: required_speed: float - The required speed of the runner to steal the base.
-
+    Returns:
+        Required runner speed in inches/sec.
     """
+    if target_base not in TARGETS:
+        raise ValueError(f"Invalid target base: {target_base}")
 
-    # Calculate the distance to the target base
-    if target_base == "second":
-        target_distance = TARGETS["second"]["from_first"] - runner_lead
-    elif target_base == "third":
-        target_distance = TARGETS["third"]["from_second"] - runner_lead
-    else:
-        raise ValueError(f"Invalid target base: {target_base}, must be one of {list(TARGETS.keys())}")
-
-    # Calculate the time it takes the ball to reach the target base
-    time_home = MOUND_HOME / pitcher_velo
-
-    time_ball = time_home + catcher_pop
-
-    # Calculate the time it takes the runner to reach the target base
+    target_distance = TARGETS[target_base][f"from_{'first' if target_base == 'second' else 'second'}"] - runner_lead
+    time_to_base = (MOUND_HOME / pitcher_velo) + catcher_pop
     time_runner = target_distance / runner_speed
 
-    # Calculate the required speed
-    required_speed = target_distance / (time_ball - time_runner)
+    return target_distance / (time_to_base - time_runner)
 
-    return required_speed
+
+# ---------------------------------------------------------------------------- #
+#                                 Data Cleaning                                #
+# ---------------------------------------------------------------------------- #
 
 
 def lookup_player(player_name: str) -> str:
     """
-    Lookup player ID using playerid_lookup from pybaseball.
+    Lookup MLBAM player ID from a formatted name "First|Last".
+
     Args:
-        player_name: str - The name of the player to lookup.
+        player_name: Player name as "First|Last".
 
     Returns:
-        str - The player ID.
+        MLBAM ID as string.
     """
-    first, last = player_name.split('|')
-    try:
-        player_data = playerid_lookup(last=last.strip(), first=first.strip())
-        if not player_data.empty:
-            return player_data.iloc[0]['key_mlbam']
-        else:
-            raise ValueError(f"Player {player_name} not found.")
-    except Exception as e:
-        raise ValueError(f"Error looking up player {player_name}: {e}")
+    first, last = map(str.strip, player_name.split('|'))
+    data = playerid_lookup(last=last, first=first)
+    if data.empty:
+        raise ValueError(f"Player {player_name} not found.")
+    return str(data.iloc[0]['key_mlbam'])
 
 
 def update_batters(file_path: str, player_info: dict = None):
     """
-    Update the batters column with player IDs.
+    Replace batter names with MLBAM player IDs in a CSV.
+
     Args:
-        file_path: str - The path to the batters file.
+        file_path: Path to CSV file.
+        player_info: Optional fallback dictionary of player names to IDs.
     """
-
-    # Load the csv file into a DataFrame
     df = pd.read_csv(file_path)
-
-    # Get all unique batter names
-    unique_batters = df['batter_name'].unique()
-
-    # Create a dictionary to store player IDs
     player_ids = {}
     failed = []
-    for batter in unique_batters:
+
+    for name in df['batter_name'].unique():
         try:
-            player_id = lookup_player(batter)
-            player_ids[batter] = player_id
-        except ValueError as _:
+            player_ids[name] = lookup_player(name)
+        except Exception:
             try:
-                first, last = batter.split('|')
-                batter_name = f"{first.strip()} {last.strip()}"
-            except ValueError as _:
-                batter_name = batter
-            player_ids[batter] = player_info.get(f"{batter_name}", f"{batter}")
+                first, last = map(str.strip, name.split('|'))
+                full_name = f"{first} {last}"
+            except Exception:
+                full_name = name
+            fallback_id = player_info.get(full_name, name) if player_info else name
+            player_ids[name] = fallback_id
+            failed.append(name)
+
     print('Failed to lookup the following players:')
     for player in failed:
-        try:
-            int(player)
-        except ValueError as _:
+        if not str(player).isdigit():
             print(player)
 
-
-    # Replace batter names with player IDs in the DataFrame
     df['batter_name'] = df['batter_name'].replace(player_ids)
-
-    # Save the updated DataFrame
     df.to_csv(file_path, index=False)
 
 
 def update_description(file_path: str):
     """
-    Update the description column to simply include if it was a ball or strike
+    Simplify pitch descriptions to 'ball', 'strike', or 'unknown'.
+
     Args:
-        file_path: str - The path to the description file.
+        file_path: Path to the CSV.
     """
-
-    # Go through each row and update the description
     df = pd.read_csv(file_path)
-    for index, row in df.iterrows():
+
+    def simplify(desc):
         try:
-            if "ball" in row['description'].lower():
-                df.at[index, 'description'] = "ball"
-            elif "strike" in row['description'].lower():
-                df.at[index, 'description'] = "strike"
-            else:
-                df.at[index, 'description'] = "unknown"
-        except AttributeError as e:
-            print(f"Error processing row {index}: {e}")
-            df.at[index, 'description'] = "unknown"
+            desc_lower = desc.lower()
+            if "ball" in desc_lower:
+                return "ball"
+            elif "strike" in desc_lower:
+                return "strike"
+        except Exception:
+            pass
+        return "unknown"
 
-    # rename the column to "call"
-    df.rename(columns={'description': 'call'}, inplace=True)
-
-    # Save the updated DataFrame
+    df['call'] = df['description'].apply(simplify)
+    df.drop(columns=['description'], inplace=True)
     df.to_csv(file_path, index=False)
 
 
 def remove_duplicates(file_path: str):
     """
-    Remove duplicate lines from a csv file while preserving the header.
+    Remove duplicate rows from a CSV, preserving the header.
+
     Args:
-        file_path: str - The path to the file to remove duplicates from.
+        file_path: Path to the CSV file.
     """
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
 
-    # Separate the header and the rest of the lines
-    header = lines[0]
-    unique_lines = list(set(lines[1:]))  # Exclude the header from deduplication
-
-    # Write back the header and unique lines
-    with open(file_path, 'w') as file:
-        file.write(header)
-        file.writelines(unique_lines)
+    header, rows = lines[0], lines[1:]
+    unique_rows = sorted(set(rows))  # Optional: sorted for consistent order
+    with open(file_path, 'w') as f:
+        f.write(header)
+        f.writelines(unique_rows)
 
 
-def remove_video_link_col(file_path: str):
+# ---------------------------------------------------------------------------- #
+#                            Random Checks And Gets                            #
+# ---------------------------------------------------------------------------- #
+
+
+def unique_items(file_path: str, col: str) -> list:
     """
-    Remove the video link column from a csv file.
+    Return a list of unique values from a column in a CSV.
+
     Args:
-        file_path: str - The path to the file to remove duplicates from.
+        file_path: Path to CSV file.
+        col: Column name.
+
+    Returns:
+        List of unique items.
     """
     df = pd.read_csv(file_path)
-    df.drop(columns=['video_link'], inplace=True)
-    df.to_csv(file_path, index=False)
+    return df[col].dropna().unique().tolist()
 
 
-def pkl_content(file_path: str) -> int:
+def pkl_content(file_path: str):
     """
-    See if the pkl file is empty or not.
-    Then return the content if not empty.
+    Load and return content from a pickle file.
 
     Args:
-        file_path:
+        file_path: Path to .pkl file.
 
-    Returns: str | int
-        The content of the pkl file if not empty.
+    Returns:
+        The object stored in the pickle file.
     """
-
     try:
-        with open(file_path, 'rb') as file:
-            content = pickle.load(file)
+        with open(file_path, 'rb') as f:
+            content = pickle.load(f)
             if content:
                 return content
-            else:
-                raise ValueError("The pkl file is empty.")
+            raise ValueError("The pkl file is empty.")
     except Exception as e:
         raise ValueError(f"Error reading the pkl file: {e}")
 
 
+def get_name_from_id(player_id: int) -> str:
+    """
+    Get player name from MLBAM ID.
+
+    Args:
+        player_id: Player's MLBAM ID.
+
+    Returns:
+        Player's last, first name.
+    """
+    df = playerid_reverse_lookup([player_id])
+    first = df.iloc[0]['name_first']
+    last = df.iloc[0]['name_last']
+    return f"{last}, {first}"
+
+
 if __name__ == '__main__':
-    file_path = "sb_data_2023-2025.csv"
+    sb_data_path = "sb_data_2023-2025.csv"
+    player_data_path = "player_data.csv"
+
+    # generate_player_data(player_data_path)
+
+    statcast_pitcher(player_id=608070)
+
+# ---------------------------------------------------------------------------- #
+#                                 Mean Helpers                                 #
+# ---------------------------------------------------------------------------- #
+
+def get_catchers_data(catcher_id: int) -> pd.DataFrame:
+    years = list(range(2008, 2026))
+    main_df = pd.DataFrame()
+
+    for year in years:
+        df = statcast_catcher_poptime(year, min_2b_att=0)
+        main_df = pd.concat([main_df, df], ignore_index=True)
+
+    catcher_df = main_df[main_df['catcher'].str.lower() == get_name_from_id(catcher_id)]
+
+    return catcher_df
+
+def get_pitchers_pitch_data(pitcher_id: int, pitch_type: str) -> pd.DataFrame:
+    """
+    Retrieve all pitches of a specified type thrown by a given pitcher from 2008 to today.
+
+    Parameters:
+    - pitcher_id (int): MLBAM ID of the pitcher.
+    - pitch_type (str): Abbreviation of the pitch type (e.g., 'FF' for four-seam fastball).
+
+    Returns:
+    - pd.DataFrame: DataFrame containing all matching pitches.
+    """
+    # Define the start and end dates
+    start_date = '2008-01-01'
+    end_date = datetime.today().strftime('%Y-%m-%d')
+
+    # Fetch all pitch data for the pitcher within the specified date range
+    main_df = statcast_pitcher(start_dt=start_date, end_dt=end_date, player_id=pitcher_id)
+
+    # Check if the DataFrame is empty
+    if main_df.empty:
+        raise ValueError(f"No data found for pitcher ID {pitcher_id} in the specified date range.")
+
+    # Normalize pitch_type entries to handle potential inconsistencies
+    main_df['pitch_type'] = main_df['pitch_type'].astype(str).str.strip().str.upper()
+    pitch_type = pitch_type.strip().upper()
+
+    # Retrieve unique pitch types for the pitcher
+    unique_pitch_types = main_df['pitch_type'].dropna().unique()
+
+    # Check if the specified pitch_type exists
+    if pitch_type not in unique_pitch_types:
+        raise ValueError(
+            f"Pitch type '{pitch_type}' not found for pitcher ID {pitcher_id}. "
+            f"Available pitch types: {', '.join(unique_pitch_types)}"
+        )
+
+    # Filter the DataFrame for the specified pitch_type
+    pitcher_df = main_df[main_df['pitch_type'] == pitch_type]
+
+    return pitcher_df
+
+
+def get_player_speed(player_id: int) -> pd.DataFrame:
+    years = list(range(2008, 2026))
+    main_df = pd.DataFrame()
+
+    for year in years:
+        df = statcast_sprint_speed(year, min_opp=0)
+        main_df = pd.concat([main_df, df], ignore_index=True)
+
+    player_df = main_df[main_df['player_id'] == player_id]
+
+    return player_df
+
+
+
+# ---------------------------------------------------------------------------- #
+#                          Standard Deviation Helpers                          #
+# ---------------------------------------------------------------------------- #
+
+
+

@@ -40,7 +40,6 @@ def safe_get(data: list, index: int) -> str:
 def upload_data(sbdata: SBData, data: list[str]):
     sbdata.date = safe_get(data, 0)
     sbdata.catcher_name = safe_get(data, 1)
-    sbdata.pitcher_name = safe_get(data, 2)
     sbdata.runner_name = safe_get(data, 3)
     sbdata.fielder_name = safe_get(data, 4)
     sbdata.target_base = safe_get(data, 5)
@@ -59,14 +58,19 @@ def upload_remaining_data(sbdata: SBData, data: list[str]):
             first = name[1].strip()
             last = name[0].strip()
             sbdata.batter_name = f"{first} | {last}"
+
+    sbdata.pitcher_name = safe_get(data, 1)
+
     count = safe_get(data, 2)
     if '-' in count:
         parts = count.split('-')
         sbdata.ball_count = parts[0].strip()
         sbdata.strike_count = parts[1].strip()
+
     sbdata.pitch_type = safe_get(data, 3)
     sbdata.velo = safe_get(data, 4)
     sbdata.match_up = safe_get(data, 7)
+
 
 
 def upload(data, filename):
@@ -111,7 +115,7 @@ def countdown(seconds):
         time.sleep(1)
 
 
-def scrape_data(start_year: int, end_year: int, url: str, checkpoint: str = None, file_path: str = None):
+def scrape_data(start_year: int, end_year: int, url: str, checkpoint: str = None, file_path: str = None, load_checkpoint: bool = False):
     driver = init_driver()
     wait = WebDriverWait(driver, 60)
 
@@ -121,7 +125,7 @@ def scrape_data(start_year: int, end_year: int, url: str, checkpoint: str = None
         main_window = driver.current_window_handle
 
         # Load the checkpoint data if provided
-        if checkpoint:
+        if load_checkpoint:
             with open(checkpoint, "rb") as f:
                 sb_rows = pickle.load(f)
 
@@ -234,7 +238,12 @@ def scrape_data(start_year: int, end_year: int, url: str, checkpoint: str = None
 
 if __name__ == '__main__':
     # Year ranges [2016 - 2025]
-    start_yr = 2023
+    start_yr = 2022
     end_yr = 2025
     url = "https://baseballsavant.mlb.com/leaderboard/basestealing-run-value"
-    data = scrape_data(start_yr, end_yr, url, checkpoint="checkpoint_1.pkl", file_path=f"sb_data_{start_yr}-{end_yr}.csv")
+    scrape_data(
+        start_yr, end_yr, url,
+        checkpoint='checkpoint.pkl',
+        file_path=f"sb_data_{start_yr}-{end_yr}.csv",
+        load_checkpoint=False
+    )
