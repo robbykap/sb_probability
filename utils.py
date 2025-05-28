@@ -1,3 +1,5 @@
+import csv
+import json
 import pickle
 import pandas as pd
 from datetime import datetime
@@ -81,25 +83,69 @@ def lookup_player(player_name: str) -> str:
         MLBAM ID as string.
     """
     first, last = map(str.strip, player_name.split('|'))
-    data = playerid_lookup(last=last, first=first)
+    data = playerid_lookup(last=last.strip(), first=first.strip())
     if data.empty:
         raise ValueError(f"Player {player_name} not found.")
     return str(data.iloc[0]['key_mlbam'])
 
 
-def update_batters(file_path: str, player_info: dict = None):
+def fix_pitcher_names(file_path: str):
+    """
+    Combines pitcher_name (field 2) and runner_name (field 3) into a full name,
+    shifts all fields left by 1, and realigns data with original headers.
+    """
+    # Read original header from the CSV
+    with open(file_path, 'r', encoding='latin1') as f:
+        reader = csv.reader(f)
+        original_columns = next(reader)
+        expected_columns = len(original_columns)
+
+    corrected_rows = []
+
+    # Read raw lines with csv.reader
+    with open(file_path, 'r', encoding='latin1') as f:
+        reader = csv.reader(f)
+        header = next(reader)  # Skip header
+        for row_values in reader:
+            if len(row_values) < expected_columns:
+                # Pad if row is too short
+                row_values += [None] * (expected_columns - len(row_values))
+
+            # Combine runner_name (index 3) and pitcher_name (index 2)
+            runner = row_values[3] if len(row_values) > 3 else ''
+            pitcher = row_values[2] if len(row_values) > 2 else ''
+            combined_name = f"{runner} | {pitcher}".strip() if runner or pitcher else None
+
+            # Shift fields: keep fields 0 and 1, then use combined_name, then rest of fields shifted left
+            shifted_row = [row_values[0], row_values[1], combined_name] + row_values[4:]
+
+            # Pad if the shifted row is too short
+            if len(shifted_row) < expected_columns:
+                shifted_row += [None] * (expected_columns - len(shifted_row))
+
+            corrected_rows.append(shifted_row[:expected_columns])  # Truncate to expected columns
+
+    # Create corrected DataFrame
+    corrected_df = pd.DataFrame(corrected_rows, columns=original_columns)
+
+    # Save corrected CSV
+    corrected_df.to_csv(file_path, index=False)
+
+
+def names_to_id(file_path: str, column: str, player_info: str = None):
     """
     Replace batter names with MLBAM player IDs in a CSV.
 
     Args:
         file_path: Path to CSV file.
+        column: Column name containing player names.
         player_info: Optional fallback dictionary of player names to IDs.
     """
     df = pd.read_csv(file_path)
     player_ids = {}
     failed = []
 
-    for name in df['batter_name'].unique():
+    for name in df[column].unique():
         try:
             player_ids[name] = lookup_player(name)
         except Exception:
@@ -108,7 +154,13 @@ def update_batters(file_path: str, player_info: dict = None):
                 full_name = f"{first} {last}"
             except Exception:
                 full_name = name
-            fallback_id = player_info.get(full_name, name) if player_info else name
+            if player_info:
+                with open(player_info, 'r') as f:
+                    info = f.read()
+                    info = json.loads(info)
+            else:
+                info = None
+            fallback_id = info.get(full_name, name) if info else name
             player_ids[name] = fallback_id
             failed.append(name)
 
@@ -117,7 +169,7 @@ def update_batters(file_path: str, player_info: dict = None):
         if not str(player).isdigit():
             print(player)
 
-    df['batter_name'] = df['batter_name'].replace(player_ids)
+    df[column] = df[column].replace(player_ids)
     df.to_csv(file_path, index=False)
 
 
@@ -161,6 +213,23 @@ def remove_duplicates(file_path: str):
     with open(file_path, 'w') as f:
         f.write(header)
         f.writelines(unique_rows)
+
+
+def clean_whitespace(file_path: str, columns: list):
+    """
+    Clean leading and trailing whitespace from specified columns in a CSV.
+
+    Args:
+        file_path: Path to the CSV file.
+        columns: List of column names to clean.
+    """
+    df = pd.read_csv(file_path)
+
+    for col in columns:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+
+    df.to_csv(file_path, index=False)
 
 
 # ---------------------------------------------------------------------------- #
@@ -218,18 +287,10 @@ def get_name_from_id(player_id: int) -> str:
     last = df.iloc[0]['name_last']
     return f"{last}, {first}"
 
-
-if __name__ == '__main__':
-    sb_data_path = "sb_data_2023-2025.csv"
-    player_data_path = "player_data.csv"
-
-    # generate_player_data(player_data_path)
-
-    statcast_pitcher(player_id=608070)
-
 # ---------------------------------------------------------------------------- #
 #                                 Mean Helpers                                 #
 # ---------------------------------------------------------------------------- #
+
 
 def get_catchers_data(catcher_id: int) -> pd.DataFrame:
     years = list(range(2008, 2026))
@@ -242,6 +303,7 @@ def get_catchers_data(catcher_id: int) -> pd.DataFrame:
     catcher_df = main_df[main_df['catcher'].str.lower() == get_name_from_id(catcher_id)]
 
     return catcher_df
+
 
 def get_pitchers_pitch_data(pitcher_id: int, pitch_type: str) -> pd.DataFrame:
     """
@@ -298,10 +360,13 @@ def get_player_speed(player_id: int) -> pd.DataFrame:
     return player_df
 
 
-
 # ---------------------------------------------------------------------------- #
 #                          Standard Deviation Helpers                          #
 # ---------------------------------------------------------------------------- #
 
 
-
+if __name__ == '__main__':
+    file = 'sb_data_2022-2025_copy.csv'
+    # names_to_id(file, 'batter_name', 'player_info.json')
+    # names_to_id(file, 'pitcher_name', 'player_info.json')
+    remove_duplicates(file)

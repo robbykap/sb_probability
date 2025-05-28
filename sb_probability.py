@@ -151,20 +151,21 @@ def sb_probability(
 
     return p
 
+
 if __name__ == '__main__':
-    with open('sb_data_2023-2025.csv', 'r') as f:
+    with open('sb_data_2022-2025_copy.csv', 'r') as f:
         sb_data = pd.read_csv(f)
 
     example = sb_data.iloc[0]
 
-    pop_time_df, mu_pop_time, sigma_pop_time = get_pop_time_stats(663743, "2B")
+    pop_time_df, mu_pop_time, sigma_pop_time = get_pop_time_stats(example['catcher_name'], example['target_base'])
 
     # pitcher_df, mu_pitcher_windup, sigma_pitcher_windup = get_pitcher_windup_stats(example['pitcher_name'])
     pitcher_windup_df, mu_pitcher_windup, sigma_pitcher_windup = None, 1.5, 0.2  # Placeholder values for windup stats
 
-    velocity_df, mu_velocity, sigma_velocity = get_velocity_stats(645261, "SI")
+    velocity_df, mu_velocity, sigma_velocity = get_velocity_stats(example['pitcher_name'], example['pitch_type'])
 
-    time_to_base_df, mu_time_to_base, sigma_time_to_base = get_time_to_base_stats(665833, 10.9)
+    time_to_base_df, mu_time_to_base, sigma_time_to_base = get_time_to_base_stats(example['runner_name'], float(example['at_pitchers_first_move']))
 
     # tag_time_df, mu_tag_time, sigma_tag_time = get_tag_time_stats(example['fielder_name'])
     tag_time_df, mu_tag_time, sigma_tag_time = None, 0.3, 0.1
