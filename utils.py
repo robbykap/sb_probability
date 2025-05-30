@@ -1,6 +1,7 @@
 import csv
 import json
 import pickle
+import chardet
 import pandas as pd
 from datetime import datetime
 from pybaseball import playerid_lookup, playerid_reverse_lookup, statcast_catcher_poptime, statcast_pitcher, statcast_sprint_speed
@@ -72,6 +73,15 @@ def calculate_required_speed(
 # ---------------------------------------------------------------------------- #
 
 
+def load_csv(file_path: str) -> pd.DataFrame:
+    with open(file_path, 'rb') as f:
+        result = chardet.detect(f.read())
+        print(result)  # shows likely encoding
+
+    df = pd.read_csv(file_path, encoding=result['encoding'])
+    return df
+
+
 def lookup_player(player_name: str) -> str:
     """
     Lookup MLBAM player ID from a formatted name "First|Last".
@@ -95,7 +105,10 @@ def fix_pitcher_names(file_path: str):
     shifts all fields left by 1, and realigns data with original headers.
     """
     # Read original header from the CSV
-    with open(file_path, 'r', encoding='latin1') as f:
+    with open(file_path, 'rb') as f:
+        result = chardet.detect(f.read())
+
+    with open(file_path, 'r', encoding=result['encoding']) as f:
         reader = csv.reader(f)
         original_columns = next(reader)
         expected_columns = len(original_columns)
@@ -103,7 +116,7 @@ def fix_pitcher_names(file_path: str):
     corrected_rows = []
 
     # Read raw lines with csv.reader
-    with open(file_path, 'r', encoding='latin1') as f:
+    with open(file_path, 'r', encoding=result['encoding']) as f:
         reader = csv.reader(f)
         header = next(reader)  # Skip header
         for row_values in reader:
@@ -141,7 +154,7 @@ def names_to_id(file_path: str, column: str, player_info: str = None):
         column: Column name containing player names.
         player_info: Optional fallback dictionary of player names to IDs.
     """
-    df = pd.read_csv(file_path)
+    df = load_csv(file_path)
     player_ids = {}
     failed = []
 
@@ -180,7 +193,7 @@ def update_description(file_path: str):
     Args:
         file_path: Path to the CSV.
     """
-    df = pd.read_csv(file_path)
+    df = load_csv(file_path)
 
     def simplify(desc):
         try:
@@ -223,7 +236,7 @@ def clean_whitespace(file_path: str, columns: list):
         file_path: Path to the CSV file.
         columns: List of column names to clean.
     """
-    df = pd.read_csv(file_path)
+    df = load_csv(file_path)
 
     for col in columns:
         if col in df.columns:
@@ -366,7 +379,20 @@ def get_player_speed(player_id: int) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
-    file = 'sb_data_2022-2025_copy.csv'
+    file = 'sb_data_2022-2025.csv'
+
+    # Fix pitcher names
+    # fix_pitcher_names(file)
+
+    # Remove duplicates
+    # remove_duplicates(file)
+
+    # Clean whitespace in specific columns
+    # clean_whitespace(file, ['batter_name', 'pitcher_name', 'fielder_name', 'catcher_name', 'runner_name'])
+
+    # Convert player names to IDs
     # names_to_id(file, 'batter_name', 'player_info.json')
     # names_to_id(file, 'pitcher_name', 'player_info.json')
-    remove_duplicates(file)
+
+    # Update pitch descriptions
+    # update_description(file)
