@@ -4,7 +4,10 @@ import pickle
 import chardet
 import pandas as pd
 from datetime import datetime
-from pybaseball import playerid_lookup, playerid_reverse_lookup, statcast_catcher_poptime, statcast_pitcher, statcast_sprint_speed
+from pybaseball import (playerid_lookup, playerid_reverse_lookup,
+                        statcast_catcher_poptime,
+                        statcast_pitcher,
+                        statcast_sprint_speed)
 
 
 # ---------------------------------------------------------------------------- #
@@ -228,6 +231,45 @@ def remove_duplicates(file_path: str):
         f.writelines(unique_rows)
 
 
+def update_nan_values(file_path: str):
+    """
+    Replaces '--' with NaN values in a CSV file.
+
+    Args:
+        file_path: Path to the CSV file.
+    """
+    df = load_csv(file_path)
+
+    # Replace '--' with NaN
+    df.replace('--', pd.NA, inplace=True)
+
+    # Save the updated DataFrame back to the CSV file
+    df.to_csv(file_path, index=False)
+
+
+def drop_rows(file_path: str):
+    """
+    Drop rows with NaN values in 'pitcher_name', 'catcher_name', 'runner_name',
+    'lead_distance_gained', 'at_pitchers_first_move', and 'at_pitch_release'
+
+    Args:
+        file_path: Path to the CSV file.
+    """
+    df = load_csv(file_path)
+
+    columns_to_check = [
+        'pitcher_name',
+        'catcher_name',
+        'runner_name',
+        'lead_distance_gained',
+        'at_pitchers_first_move',
+        'at_pitch_release'
+    ]
+    df.dropna(subset=columns_to_check, inplace=True)
+
+    df.to_csv(file_path, index=False)
+
+
 def clean_whitespace(file_path: str, columns: list):
     """
     Clean leading and trailing whitespace from specified columns in a CSV.
@@ -379,20 +421,23 @@ def get_player_speed(player_id: int) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
+# --------------------------------- File Path -------------------------------- #
     file = 'sb_data_2022-2025.csv'
 
-    # Fix pitcher names
+# ----------------------------- Fix pitcher names ---------------------------- #
     # fix_pitcher_names(file)
 
-    # Remove duplicates
+# -------------------------------- Remove rows ------------------------------- #
     # remove_duplicates(file)
+    # update_nan_values(file)
+    # drop_rows(file)
 
-    # Clean whitespace in specific columns
+# ------------------- Clean whitespace in specific columns ------------------- #
     # clean_whitespace(file, ['batter_name', 'pitcher_name', 'fielder_name', 'catcher_name', 'runner_name'])
 
-    # Convert player names to IDs
+# ------------------------ Convert player names to IDs ----------------------- #
     # names_to_id(file, 'batter_name', 'player_info.json')
     # names_to_id(file, 'pitcher_name', 'player_info.json')
 
-    # Update pitch descriptions
+# ------------------------- Update pitch descriptions ------------------------ #
     # update_description(file)
