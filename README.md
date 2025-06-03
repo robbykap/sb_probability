@@ -1,4 +1,4 @@
-# [Stolen Base Scraper](sb_data_scrapper.py)
+# [Stolen Base Scraper](stolen_base/sb_data_scrapper.py)
 
 This is a web scraper that extracts the following data from the website [Basestealing Run Value Leaderboard](https://baseballsavant.mlb.com/leaderboard/basestealing-run-value):
 

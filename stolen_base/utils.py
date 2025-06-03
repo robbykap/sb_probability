@@ -422,7 +422,7 @@ def get_player_speed(player_id: int) -> pd.DataFrame:
 
 if __name__ == '__main__':
 # --------------------------------- File Path -------------------------------- #
-    file = 'sb_data_2022-2025.csv'
+    file = '../data/sb_data_2022-2025.csv'
 
 # ----------------------------- Fix pitcher names ---------------------------- #
     # fix_pitcher_names(file)
