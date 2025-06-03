@@ -1,4 +1,4 @@
-date,catcher_name,pitcher_name,runner_name,batter_name,fielder_name,target_base,result,runner_stealing_runs,lead_distance_gained,at_pitchers_first_move,at_pitch_release,ball_count,strike_count,pitch_type,velo,match_up,call,video_link
+date,catcher_id,pitcher_id,runner_id,batter_id,fielder_id,target_base,result,runner_stealing_runs,lead_distance_gained,at_pitchers_first_move,at_pitch_release,ball_count,strike_count,pitch_type,velo,match_up,call,video_link
 2022-04-07,425877,425794,621028,657061,657557.0,2B,CS,-0.45,7.6,10.8,18.4,3,2,CU,72.9,PIT @ STL,strike,https://baseballsavant.mlb.com/sporty-videos?playId=dc519d41-fe7f-448c-af96-3f95b3012892
 2022-04-07,521692,425844,664702,642708,670032.0,2B,SB,0.2,9.8,11.0,20.8,2,0,FC,84.3,CLE @ KC,strike,https://baseballsavant.mlb.com/sporty-videos?playId=c0f32e24-1adc-4ed0-afd4-4e47eec83a87
 2022-04-07,545358,605151,514888,488726,642180.0,2B,SB,0.2,12.0,11.3,23.3,0,0,KC,77.9,HOU @ LAA,strike,https://baseballsavant.mlb.com/sporty-videos?playId=a082638e-c0e6-4811-a28e-d9fee5513678
