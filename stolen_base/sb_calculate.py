@@ -2,6 +2,8 @@ import pandas as pd
 from math import sqrt
 from scipy.stats import norm
 
+from pathlib import Path
+
 from utils import get_catchers_data, get_pitchers_pitch_data, get_player_speed
 
 
@@ -108,6 +110,73 @@ def get_tag_time_stats(fielder_id: int) -> tuple:
     """
     pass
 
+
+def generate_speed_df(file_path: Path):
+    """
+    Generate a DataFrame with player speeds from 2008 to today and save it as a CSV.
+    """
+    # Read the stolen base data
+    sb_data = pd.read_csv(file_path)
+
+    # Get unique players
+    players = set(sb_data['runner_id'].unique().astype(int))
+
+    # Collect player speeds
+    mu_speeds = []
+    for player in players:
+        player_df = get_player_speed(player)
+        mu_speeds.append(round(player_df['sprint_speed'].iloc[0], 3))
+
+    speed_df = pd.DataFrame({
+        'player_id': list(players),
+        'sprint_speed': mu_speeds
+    })
+
+    # Save to CSV
+    speed_df.to_csv('/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/player_speed.csv', index=False)
+
+
+def generate_pop_time_df(file_path: Path):
+    """
+    Generate a DataFrame with pop times for all catchers from 2008 to today and save it as a CSV.
+    """
+    # Read the stolen base data
+    sb_data = pd.read_csv(file_path)
+
+    # Get unique catchers
+    players = set(sb_data['catcher_id'].unique().astype(int))
+
+    # Collect pop times for 3B
+    mu_pop_times_3b = []
+    for player in players:
+        _, time, _ = get_pop_time_stats(player, '3b')
+        mu_pop_times_3b.append(round(time, 3))
+
+    pop_time_3b_df = pd.DataFrame({
+        'catcher_id': list(players),
+        'target_base': ['3B'] * len(players),
+        'pop_time': mu_pop_times_3b
+    })
+
+    # Collect pop times for 2B
+    mu_pop_times_2b = []
+    for player in players:
+        _, time, _ = get_pop_time_stats(player, '2b')
+        mu_pop_times_2b.append(round(time, 3))
+
+    pop_time_2b_df = pd.DataFrame({
+        'catcher_id': list(players),
+        'target_base': ['2B'] * len(players),
+        'pop_time': mu_pop_times_2b
+    })
+
+    # Combine both
+    pop_time_df = pd.concat([pop_time_3b_df, pop_time_2b_df], ignore_index=True)
+
+    # Save to CSV
+    pop_time_df.to_csv('/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/pop_time.csv', index=False)
+
+
 def sb_probability(
         mu_pop_time: float,
         sigma_pop_time: float,
@@ -153,30 +222,9 @@ def sb_probability(
 
 
 if __name__ == '__main__':
-    with open('sb_data_2022-2025_copy.csv', 'r') as f:
-        sb_data = pd.read_csv(f)
+    file = Path('/data/sb_data_complete/sb_data_2016-2025.csv')
+    # generate_pop_time_df(file)
+    generate_speed_df(file)
 
-    example = sb_data.iloc[0]
-
-    pop_time_df, mu_pop_time, sigma_pop_time = get_pop_time_stats(example['catcher_name'], example['target_base'])
-
-    # pitcher_df, mu_pitcher_windup, sigma_pitcher_windup = get_pitcher_windup_stats(example['pitcher_name'])
-    pitcher_windup_df, mu_pitcher_windup, sigma_pitcher_windup = None, 1.5, 0.2  # Placeholder values for windup stats
-
-    velocity_df, mu_velocity, sigma_velocity = get_velocity_stats(example['pitcher_name'], example['pitch_type'])
-
-    time_to_base_df, mu_time_to_base, sigma_time_to_base = get_time_to_base_stats(example['runner_name'], float(example['at_pitchers_first_move']))
-
-    # tag_time_df, mu_tag_time, sigma_tag_time = get_tag_time_stats(example['fielder_name'])
-    tag_time_df, mu_tag_time, sigma_tag_time = None, 0.3, 0.1
-
-    probability = sb_probability(
-        mu_pop_time, sigma_pop_time,
-        mu_pitcher_windup, sigma_pitcher_windup,
-        mu_velocity, sigma_velocity,
-        mu_time_to_base, sigma_time_to_base,
-        mu_tag_time, sigma_tag_time
-    )
-    print(f"Probability of successful stolen base: {probability:.2f}")
 
 

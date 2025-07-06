@@ -85,6 +85,24 @@ def load_csv(file_path: str) -> pd.DataFrame:
     return df
 
 
+def merge_csvs(file_paths: list, output_file: str):
+    """
+    Merge multiple CSV files into a single DataFrame and save it.
+
+    Args:
+        file_paths: List of paths to CSV files.
+        output_file: Path to save the merged CSV.
+    """
+    dfs = []
+    for file_path in file_paths:
+        df = load_csv(file_path)
+        dfs.append(df)
+
+    merged_df = pd.concat(dfs, ignore_index=True)
+    merged_df.to_csv(output_file, index=False)
+    print(f"Merged {len(file_paths)} files into {output_file}.")
+
+
 def lookup_player(player_name: str) -> str:
     """
     Lookup MLBAM player ID from a formatted name "First|Last".
@@ -100,52 +118,6 @@ def lookup_player(player_name: str) -> str:
     if data.empty:
         raise ValueError(f"Player {player_name} not found.")
     return str(data.iloc[0]['key_mlbam'])
-
-
-def fix_pitcher_names(file_path: str):
-    """
-    Combines pitcher_name (field 2) and runner_name (field 3) into a full name,
-    shifts all fields left by 1, and realigns data with original headers.
-    """
-    # Read original header from the CSV
-    with open(file_path, 'rb') as f:
-        result = chardet.detect(f.read())
-
-    with open(file_path, 'r', encoding=result['encoding']) as f:
-        reader = csv.reader(f)
-        original_columns = next(reader)
-        expected_columns = len(original_columns)
-
-    corrected_rows = []
-
-    # Read raw lines with csv.reader
-    with open(file_path, 'r', encoding=result['encoding']) as f:
-        reader = csv.reader(f)
-        header = next(reader)  # Skip header
-        for row_values in reader:
-            if len(row_values) < expected_columns:
-                # Pad if row is too short
-                row_values += [None] * (expected_columns - len(row_values))
-
-            # Combine runner_name (index 3) and pitcher_name (index 2)
-            runner = row_values[3] if len(row_values) > 3 else ''
-            pitcher = row_values[2] if len(row_values) > 2 else ''
-            combined_name = f"{runner} | {pitcher}".strip() if runner or pitcher else None
-
-            # Shift fields: keep fields 0 and 1, then use combined_name, then rest of fields shifted left
-            shifted_row = [row_values[0], row_values[1], combined_name] + row_values[4:]
-
-            # Pad if the shifted row is too short
-            if len(shifted_row) < expected_columns:
-                shifted_row += [None] * (expected_columns - len(shifted_row))
-
-            corrected_rows.append(shifted_row[:expected_columns])  # Truncate to expected columns
-
-    # Create corrected DataFrame
-    corrected_df = pd.DataFrame(corrected_rows, columns=original_columns)
-
-    # Save corrected CSV
-    corrected_df.to_csv(file_path, index=False)
 
 
 def names_to_id(file_path: str, column: str, player_info: str = None):
@@ -225,7 +197,7 @@ def remove_duplicates(file_path: str):
         lines = f.readlines()
 
     header, rows = lines[0], lines[1:]
-    unique_rows = sorted(set(rows))  # Optional: sorted for consistent order
+    unique_rows = set(rows)  # Optional: sorted for consistent order
     with open(file_path, 'w') as f:
         f.write(header)
         f.writelines(unique_rows)
@@ -352,7 +324,7 @@ def get_catchers_data(catcher_id: int) -> pd.DataFrame:
     main_df = pd.DataFrame()
 
     for year in years:
-        df = statcast_catcher_poptime(year, min_2b_att=0)
+        df = statcast_catcher_poptime(year, min_2b_att=0, min_3b_att=0)
         main_df = pd.concat([main_df, df], ignore_index=True)
 
     catcher_df = main_df[main_df['catcher'].str.lower() == get_name_from_id(catcher_id)]
@@ -419,25 +391,35 @@ def get_player_speed(player_id: int) -> pd.DataFrame:
 #                          Standard Deviation Helpers                          #
 # ---------------------------------------------------------------------------- #
 
-
 if __name__ == '__main__':
 # --------------------------------- File Path -------------------------------- #
-    file = '../data/sb_data_2022-2025.csv'
-
-# ----------------------------- Fix pitcher names ---------------------------- #
-    # fix_pitcher_names(file)
+#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2022.csv'
+#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2022-2025.csv'
+    file = '/data/sb_data_complete/sb_data_2016-2025.csv'
+#     player_info = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/player_info.json'
 
 # -------------------------------- Remove rows ------------------------------- #
-    # remove_duplicates(file)
-    # update_nan_values(file)
-    # drop_rows(file)
+    remove_duplicates(file)
+#     update_nan_values(file)
+#     drop_rows(file)
 
 # ------------------- Clean whitespace in specific columns ------------------- #
-    # clean_whitespace(file, ['batter_name', 'pitcher_name', 'fielder_name', 'catcher_name', 'runner_name'])
+#     clean_whitespace(file, ['batter_name', 'pitcher_name', 'fielder_name', 'catcher_name', 'runner_name'])
 
 # ------------------------ Convert player names to IDs ----------------------- #
-    # names_to_id(file, 'batter_name', 'player_info.json')
-    # names_to_id(file, 'pitcher_name', 'player_info.json')
+#     names_to_id(file, 'batter_name', player_info)
+#     names_to_id(file, 'pitcher_name', player_info)
 
 # ------------------------- Update pitch descriptions ------------------------ #
-    # update_description(file)
+#     update_description(file)
+
+    # merge_csvs(['/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_0.csv',
+    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_1.csv',
+    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_2.csv'],
+    #            '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2022.csv')
+    #
+    # merge_csvs([
+    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2022.csv',
+    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2022-2025.csv'
+    # ],
+    # '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2025.csv')
