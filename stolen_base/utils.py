@@ -193,15 +193,13 @@ def remove_duplicates(file_path: str):
     Args:
         file_path: Path to the CSV file.
     """
-    with open(file_path, 'r') as f:
-        lines = f.readlines()
+    df = load_csv(file_path)
 
-    header, rows = lines[0], lines[1:]
-    unique_rows = set(rows)  # Optional: sorted for consistent order
-    with open(file_path, 'w') as f:
-        f.write(header)
-        f.writelines(unique_rows)
+    # Remove duplicate rows
+    df.drop_duplicates(inplace=True)
 
+    # Save the updated DataFrame back to the CSV file
+    df.to_csv(file_path, index=False)
 
 def update_nan_values(file_path: str):
     """
@@ -393,13 +391,13 @@ def get_player_speed(player_id: int) -> pd.DataFrame:
 
 if __name__ == '__main__':
 # --------------------------------- File Path -------------------------------- #
-#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2022.csv'
-#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2022-2025.csv'
-    file = '/data/sb_data_complete/sb_data_2016-2025.csv'
-#     player_info = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/player_info.json'
+#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2022.csv'
+#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2022-2025.csv'
+    file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2025.csv'
+    player_info = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/name_id_map.json'
 
 # -------------------------------- Remove rows ------------------------------- #
-    remove_duplicates(file)
+#     remove_duplicates(file)
 #     update_nan_values(file)
 #     drop_rows(file)
 
@@ -407,19 +405,19 @@ if __name__ == '__main__':
 #     clean_whitespace(file, ['batter_name', 'pitcher_name', 'fielder_name', 'catcher_name', 'runner_name'])
 
 # ------------------------ Convert player names to IDs ----------------------- #
-#     names_to_id(file, 'batter_name', player_info)
-#     names_to_id(file, 'pitcher_name', player_info)
+    names_to_id(file, 'batter_name', player_info)
+    names_to_id(file, 'pitcher_name', player_info)
 
 # ------------------------- Update pitch descriptions ------------------------ #
 #     update_description(file)
 
-    # merge_csvs(['/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_0.csv',
-    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_1.csv',
-    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_2.csv'],
-    #            '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2022.csv')
+    # merge_csvs(['/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_workers/sb_data_worker_0.csv',
+    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_workers/sb_data_worker_1.csv',
+    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_workers/sb_data_worker_2.csv'],
+    #            '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2022.csv')
     #
     # merge_csvs([
-    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2022.csv',
-    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2022-2025.csv'
+    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2022.csv',
+    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2022-2025.csv'
     # ],
-    # '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_2016-2025.csv')
+    # '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2025.csv')
