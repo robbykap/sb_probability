@@ -398,15 +398,15 @@ if __name__ == '__main__':
 
 # -------------------------------- Remove rows ------------------------------- #
 #     remove_duplicates(file)
-#     update_nan_values(file)
+    update_nan_values(file)
 #     drop_rows(file)
 
 # ------------------- Clean whitespace in specific columns ------------------- #
 #     clean_whitespace(file, ['batter_name', 'pitcher_name', 'fielder_name', 'catcher_name', 'runner_name'])
 
 # ------------------------ Convert player names to IDs ----------------------- #
-    names_to_id(file, 'batter_name', player_info)
-    names_to_id(file, 'pitcher_name', player_info)
+#     names_to_id(file, 'batter_name', player_info)
+#     names_to_id(file, 'pitcher_name', player_info)
 
 # ------------------------- Update pitch descriptions ------------------------ #
 #     update_description(file)
