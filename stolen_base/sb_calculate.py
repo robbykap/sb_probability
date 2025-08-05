@@ -6,6 +6,8 @@ from pathlib import Path
 
 from utils import get_catchers_data, get_pitchers_pitch_data, get_player_speed
 
+from pybaseball import statcast_running_splits
+
 
 def get_pop_time_stats(catcher_id: int, target_base: str) -> tuple:
     """
@@ -177,6 +179,34 @@ def generate_pop_time_df(file_path: Path):
     pop_time_df.to_csv('/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/pop_time.csv', index=False)
 
 
+def generate_splits_df():
+    """
+    Generate a DataFrame with averaged sprint split times per player from 2008 to today.
+    """
+    years = list(range(2008, 2025))
+    splits = pd.DataFrame()
+
+    for year in years:
+        year_splits = statcast_running_splits(year, min_opp=0, raw_splits=True)
+        splits = pd.concat([splits, year_splits], ignore_index=True)
+
+    print("Columns:", splits.columns.tolist())  # Debug
+
+    # Select split time columns dynamically
+    split_cols = [col for col in splits.columns if col.startswith('seconds_since_hit_')]
+
+    # Group by player_id (and optionally name) and average split columns
+    averaged = (
+        splits.groupby(['player_id', 'last_name, first_name', 'name_abbrev', 'team_id', 'position_name', 'age', 'bat_side'])[split_cols]
+        .mean()
+        .reset_index()
+    )
+
+    # Save the averaged result
+    averaged.to_csv('/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/speed_splits.csv', index=False)
+
+
+
 def sb_probability(
         mu_pop_time: float,
         sigma_pop_time: float,
@@ -222,9 +252,9 @@ def sb_probability(
 
 
 if __name__ == '__main__':
-    file = Path('/data/sb_data_complete/sb_data_2016-2025.csv')
+    file = Path('/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2025.csv')
     # generate_pop_time_df(file)
-    generate_speed_df(file)
-
+    # generate_speed_df(file)
+    generate_splits_df()
 
 

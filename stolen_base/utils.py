@@ -4,10 +4,22 @@ import pickle
 import chardet
 import pandas as pd
 from datetime import datetime
+
+from tqdm import tqdm
+
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support import expected_conditions as EC
+
+from sb_data_scrapper import init_driver
+
 from pybaseball import (playerid_lookup, playerid_reverse_lookup,
                         statcast_catcher_poptime,
                         statcast_pitcher,
-                        statcast_sprint_speed)
+                        statcast_sprint_speed,
+                        statcast_running_splits
+                        )
 
 
 # ---------------------------------------------------------------------------- #
@@ -318,14 +330,14 @@ def get_name_from_id(player_id: int) -> str:
 
 
 def get_catchers_data(catcher_id: int) -> pd.DataFrame:
-    years = list(range(2008, 2026))
+    years = list(range(2016, 2026))
     main_df = pd.DataFrame()
 
     for year in years:
         df = statcast_catcher_poptime(year, min_2b_att=0, min_3b_att=0)
         main_df = pd.concat([main_df, df], ignore_index=True)
 
-    catcher_df = main_df[main_df['catcher'].str.lower() == get_name_from_id(catcher_id)]
+    catcher_df = main_df[main_df['entity_name'].str.lower() == get_name_from_id(catcher_id)]
 
     return catcher_df
 
@@ -385,20 +397,117 @@ def get_player_speed(player_id: int) -> pd.DataFrame:
     return player_df
 
 
+from selenium.common.exceptions import NoSuchWindowException, WebDriverException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import pandas as pd
+from tqdm import tqdm
+
+def get_zone_data(sb_data: str, new_sb_data: str = None):
+    sb_df = pd.read_csv(sb_data)
+
+    if 'strike_zone' not in sb_df.columns:
+        sb_df['strike_zone'] = None
+
+    if new_sb_data:
+        try:
+            new_sb_df = pd.read_csv(new_sb_data)
+        except FileNotFoundError:
+            new_sb_df = pd.DataFrame(columns=sb_df.columns)
+    else:
+        new_sb_df = pd.DataFrame(columns=sb_df.columns)
+
+    if not new_sb_df.empty:
+        compare_cols = sb_df.columns[:-1]
+        processed_rows = {
+            tuple(row) for row in new_sb_df[compare_cols].itertuples(index=False, name=None)
+        }
+    else:
+        sb_df.iloc[0:0].to_csv(new_sb_data, index=False)
+        processed_rows = set()
+
+    try:
+        driver = init_driver()
+        wait = WebDriverWait(driver, 2)
+
+        # Open a blank tab to avoid closing the main session
+        driver.get("about:blank")
+        base_tab = driver.current_window_handle
+
+        for row in tqdm(sb_df.itertuples(index=False, name=None), total=len(sb_df), desc="Fetching zone data"):
+            row_key = tuple(row[:-1])
+            if row_key in processed_rows:
+                continue
+
+            video_link = row[-2]
+            strike_zone = None
+
+            try:
+                # Open new tab and switch to it
+                driver.execute_script("window.open('');")
+                new_tab = [tab for tab in driver.window_handles if tab != base_tab][-1]
+                driver.switch_to.window(new_tab)
+
+                driver.get(video_link)
+                wait.until(EC.presence_of_element_located((By.ID, "zone_chart")))
+                strike_zone = driver.find_element(By.ID, "zone_chart").get_attribute("innerHTML")
+
+            except (NoSuchWindowException, WebDriverException) as e:
+                print(f"[SKIP] Chrome window error for row {row}: {e}")
+            except Exception as e:
+                print(f"[SKIP] General error fetching zone for row {row}: {e}")
+            finally:
+                # Close current tab and return to base tab
+                try:
+                    driver.close()
+                    driver.switch_to.window(base_tab)
+                except Exception:
+                    pass
+
+            if strike_zone is None:
+                continue
+
+            new_row = list(row[:-1]) + [strike_zone]
+            with open(new_sb_data, 'a') as f:
+                pd.DataFrame([new_row], columns=sb_df.columns).to_csv(f, header=False, index=False)
+
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+    print("Strike zone data fetch complete.")
+
+
+
+
+
 # ---------------------------------------------------------------------------- #
 #                          Standard Deviation Helpers                          #
 # ---------------------------------------------------------------------------- #
 
 if __name__ == '__main__':
 # --------------------------------- File Path -------------------------------- #
-#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2022.csv'
+#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2021.csv'
 #     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2022-2025.csv'
     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2025.csv'
-    player_info = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/name_id_map.json'
+#     file = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/new_sb_data_2016-2025.csv'
+    # player_info = '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/name_id_map.json'
+
+    # df = pd.read_csv(file)
+    # df["fielder_id"] = df["fielder_id"].fillna(-1).astype(int)  # or use a sentinel like -1
+
+    # Convert float to int
+    # df["fielder_id"] = df["fielder_id"].astype(int)
+
+    # Overwrite the original CSV with the updated data
+    # df.to_csv(file, index=False)
 
 # -------------------------------- Remove rows ------------------------------- #
 #     remove_duplicates(file)
-    update_nan_values(file)
+#     update_nan_values(file)
 #     drop_rows(file)
 
 # ------------------- Clean whitespace in specific columns ------------------- #
@@ -411,13 +520,14 @@ if __name__ == '__main__':
 # ------------------------- Update pitch descriptions ------------------------ #
 #     update_description(file)
 
-    # merge_csvs(['/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_workers/sb_data_worker_0.csv',
-    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_workers/sb_data_worker_1.csv',
-    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_workers/sb_data_worker_2.csv'],
-    #            '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2022.csv')
-    #
+    # merge_csvs(['/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_0.csv',
+    #                      '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/sb_data_worker_1.csv'],
+    #            '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2021.csv')
+
     # merge_csvs([
-    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2022.csv',
+    #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2021.csv',
     #     '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2022-2025.csv'
     # ],
     # '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/sb_data_2016-2025.csv')
+
+    get_zone_data(file, '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/data/sb_data_complete/new_sb_data_2016-2025.csv')

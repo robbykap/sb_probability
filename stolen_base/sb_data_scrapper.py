@@ -32,6 +32,7 @@ class SBData:
     velo: str = ""
     description: str = ""
     match_up: str = ""
+    strike_zone: str = ""
     video_link: str = ""
 
 def safe_get(data: list, index: int) -> str:
@@ -109,8 +110,8 @@ def scrape_worker(worker_id, start_idx, end_idx, url, checkpoint=None):
     try:
         driver.get(url)
         wait.until(EC.presence_of_element_located((By.ID, "ddlSeasonStart")))
-        Select(driver.find_element(By.ID, "ddlSeasonStart")).select_by_visible_text("2022")
-        Select(driver.find_element(By.ID, "ddlSeasonEnd")).select_by_visible_text("2025")
+        Select(driver.find_element(By.ID, "ddlSeasonStart")).select_by_visible_text("2016")
+        Select(driver.find_element(By.ID, "ddlSeasonEnd")).select_by_visible_text("2021")
         driver.find_element(By.ID, "btn-update").click()
         wait.until(EC.presence_of_element_located((By.ID, "basestealing_running_game_table")))
 
@@ -168,6 +169,7 @@ def scrape_worker(worker_id, start_idx, end_idx, url, checkpoint=None):
                 driver.switch_to.window(driver.window_handles[-1])
                 wait.until(EC.presence_of_element_located((By.ID, "sporty_video")))
                 sb.description = driver.find_element(By.TAG_NAME, "h3").text.strip().replace(',', '|')
+                sb.strike_zone = driver.find_element(By.ID, "zone_chart-zone").get_attribute("innerHTML")
                 bullets = driver.find_elements(By.CLASS_NAME, "mod")[-1].find_elements(By.TAG_NAME, "li")
                 bullet_data = [b.text.split(":")[-1].strip() for b in bullets]
                 upload_remaining_data(sb, bullet_data)
@@ -192,7 +194,7 @@ def scrape_worker(worker_id, start_idx, end_idx, url, checkpoint=None):
 
 def main(
         url = "https://baseballsavant.mlb.com/leaderboard/basestealing-run-value",
-        n_workers: int = 3,
+        n_workers: int = 2,
         checkpoints: list = None
 ):
 
@@ -201,7 +203,7 @@ def main(
         wait = WebDriverWait(driver, 60)
         driver.get(url)
         wait.until(EC.presence_of_element_located((By.ID, "ddlSeasonStart")))
-        Select(driver.find_element(By.ID, "ddlSeasonStart")).select_by_visible_text("2022")
+        Select(driver.find_element(By.ID, "ddlSeasonStart")).select_by_visible_text("2016")
         Select(driver.find_element(By.ID, "ddlSeasonEnd")).select_by_visible_text("2025")
         driver.find_element(By.ID, "btn-update").click()
         wait.until(EC.presence_of_element_located((By.ID, "basestealing_running_game_table")))
@@ -241,8 +243,4 @@ def main(
 
 if __name__ == '__main__':
     main(
-        checkpoints = [
-            '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/checkpoint_0.pkl',
-            '/Users/robbykapua/Documents/GitHub/idea-lab/sb_probability/checkpoint_1.pkl'
-        ]
     )
